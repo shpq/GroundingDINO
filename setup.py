@@ -25,6 +25,16 @@ import os
 import subprocess
 import sys
 from setuptools import find_packages, setup
+import os
+import subprocess
+import sys
+
+try:
+    import torch
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "torch"])
+
+# the rest of your code...
 
 # groundingdino version info
 version = "0.1.0"
