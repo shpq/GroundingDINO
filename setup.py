@@ -23,16 +23,15 @@
 import glob
 import os
 import subprocess
-
-import torch
+import sys
 from setuptools import find_packages, setup
-from torch.utils.cpp_extension import CUDA_HOME, CppExtension, CUDAExtension
 
 # groundingdino version info
 version = "0.1.0"
 package_name = "groundingdino"
 cwd = os.path.dirname(os.path.abspath(__file__))
 
+sys.path.append("/src/GroundingDINO/")
 
 sha = "Unknown"
 try:
@@ -50,10 +49,13 @@ def write_version_file():
 
 requirements = ["torch", "torchvision"]
 
-torch_ver = [int(x) for x in torch.__version__.split(".")[:2]]
 
 
 def get_extensions():
+    import torch
+    from torch.utils.cpp_extension import CUDA_HOME, CppExtension, CUDAExtension
+
+    torch_ver = [int(x) for x in torch.__version__.split(".")[:2]]
     this_dir = os.path.dirname(os.path.abspath(__file__))
     extensions_dir = os.path.join(this_dir, "groundingdino", "models", "GroundingDINO", "csrc")
 
@@ -65,12 +67,20 @@ def get_extensions():
 
     sources = [main_source] + sources
 
+    # We need these variables to build with CUDA when we create the Docker image
+    # It solves https://github.com/IDEA-Research/Grounded-Segment-Anything/issues/53
+    # and https://github.com/IDEA-Research/Grounded-Segment-Anything/issues/84 when running
+    # inside a Docker container.
+    am_i_docker = os.environ.get('AM_I_DOCKER', '').casefold() in ['true', '1', 't']
+    use_cuda = os.environ.get('BUILD_WITH_CUDA', '').casefold() in ['true', '1', 't']
+
     extension = CppExtension
 
     extra_compile_args = {"cxx": []}
     define_macros = []
 
-    if CUDA_HOME is not None and (torch.cuda.is_available() or "TORCH_CUDA_ARCH_LIST" in os.environ):
+    if (torch.cuda.is_available() and CUDA_HOME is not None) or \
+            (am_i_docker and use_cuda):
         print("Compiling with CUDA")
         extension = CUDAExtension
         sources += source_cuda
@@ -180,6 +190,9 @@ def parse_requirements(fname="requirements.txt", with_version=True):
     packages = list(gen_packages_items())
     return packages
 
+def get_cmdclass():
+    import torch
+    return {"build_ext": torch.utils.cpp_extension.BuildExtension}
 
 if __name__ == "__main__":
     print(f"Building wheel {package_name}-{version}")
@@ -204,5 +217,5 @@ if __name__ == "__main__":
             )
         ),
         ext_modules=get_extensions(),
-        cmdclass={"build_ext": torch.utils.cpp_extension.BuildExtension},
+        cmdclass=get_cmdclass(),
     )
